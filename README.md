@@ -162,7 +162,8 @@ Raw JSON의 기본 구조는 다음과 같습니다.
 
 ## 13. 실제 테스트 결과
 
-2026-08-30에 프로젝트 전용 Python 3.12 가상환경에서 확인했습니다.
+2026-08-30 최초 통합 검증 후, 2026-09-02에 현재 PC의 프로젝트 전용
+Python 3.13.15 가상환경에서 다시 확인했습니다.
 
 자동 테스트:
 
@@ -170,7 +171,7 @@ Raw JSON의 기본 구조는 다음과 같습니다.
 python -m unittest -v
 ```
 
-- 25개 테스트 모두 통과
+- 25개 테스트 모두 통과 (`exit code 0`)
 - 정상/잘못된 날짜 및 두 CLI 옵션
 - Gemini 키 누락, JSON 파싱 오류, 인증 오류, 5xx 대체 재시도
 - Kakao 키 누락, 0건, 인증 오류, 네트워크 오류, 정상 5건 제한
@@ -189,6 +190,19 @@ python travel_planner.py --date "2026-10-10"
 - Gemini 최종 Markdown 생성 성공
 - JSON/Markdown 파일 생성 및 재읽기 검증 성공
 - 최종 `errors`는 빈 목록
+
+2026-09-02 재검증에서도 같은 명령이 `exit code 0`으로 완료되었고,
+추천 지역 필드가 채워진 JSON, Kakao 맛집 5건, 빈 `errors` 목록 및 Markdown
+리포트를 UTF-8로 다시 읽어 확인했습니다. 이 재검증은 API 호출을 불필요하게
+반복하지 않기 위해 한 번만 수행했습니다.
+
+현재 Google 공식 문서는 새 프로젝트에 Interactions API를 권장하지만 기존
+`generateContent` API도 계속 완전 지원한다고 안내합니다. 따라서 실제로 정상
+동작하고 25개 회귀 테스트가 있는 현재 `client.models.generate_content` 구현은
+무리하게 교체하지 않았습니다. `gemini-flash-latest`와 대체 모델
+`gemini-3.5-flash`는 현재 공식 모델 목록에 있으며 Structured Output도
+지원됩니다. Kakao 호출은 공식 문서의 keyword endpoint와 `KakaoAK` 인증 방식을
+그대로 사용합니다.
 
 ## 14. 보안
 

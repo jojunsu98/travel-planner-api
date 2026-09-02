@@ -50,12 +50,26 @@
 - 생성된 두 파일을 다시 읽어 내용 검증 완료
 - 실제 통합 결과의 `errors`: 빈 목록
 
+## 2026-09-02 최종 재검증
+
+- Python 3.13.15 프로젝트 전용 `.venv` 새로 구성
+- `pip check`: 의존성 충돌 없음
+- `python -m unittest -v`: 25개 모두 PASS, 종료 코드 0
+- `2026-13-40` 입력: API 호출 전에 차단, 종료 코드 2, traceback 없음
+- 모듈 import: 자동 실행 없이 성공
+- Gemini·Kakao 실제 통합 실행 1회: 종료 코드 0
+- 추천 지역 필드 존재, Kakao 맛집 5건, `errors` 0건
+- JSON과 Markdown UTF-8 재읽기 및 SHA-256 산출 성공
+- 실제 API 키 2개를 현재 파일·Git 전체 이력·stash와 대조: 발견 0건
+
 # 실패/오류 해결 기록
 
 - 최초 진단용 표준입력 스크립트에서 `load_dotenv()` 자동 경로 탐색이 실패해 프로젝트 `.env` 경로를 명시했습니다. 실제 프로그램도 파일 위치 기준 경로를 사용합니다.
 - 현재 `gemini-flash-latest` 모델은 인증과 모델 조회는 성공하지만 생성 요청에서 일시적 503 또는 시간초과가 재현됐습니다.
 - 현재 실제 생성이 성공한 `gemini-3.5-flash`를 5xx/네트워크 오류 때 한 번만 사용하는 대체 모델로 추가했습니다. 기본 요청 모델은 과제 지침의 `gemini-flash-latest`를 유지합니다.
-- 기존 원격 구현은 `google-genai`의 `client.models.generate_content` 방식이었으며 Interactions API 구현은 발견되지 않았습니다. 최종 구현도 `generate_content` 방식을 채택했습니다.
+- Google 공식 문서는 2026년 6월부터 새 프로젝트에 Interactions API를 권장하지만, 기존 `generateContent` API도 완전 지원한다고 명시합니다. 현재 구현은 실제 통합 실행과 25개 회귀 테스트를 통과하므로 `client.models.generate_content` 방식을 유지했습니다.
+- 공식 모델 문서에서 `gemini-flash-latest`의 현재 대상인 `gemini-3.5-flash`와 명시 대체 모델 `gemini-3.5-flash`의 지원 및 Structured Output 기능을 확인했습니다.
+- Kakao 공식 문서에서 `GET https://dapi.kakao.com/v2/local/search/keyword.json`과 `Authorization: KakaoAK ${REST_API_KEY}` 방식을 다시 확인했습니다.
 - Kakao API의 과거 403 기록은 이번 PC 검증에서는 재현되지 않았고 현재 HTTP 200으로 정상입니다.
 - API 키 변수명은 최종적으로 `GEMINI_API_KEY`, `KAKAO_REST_API_KEY` 두 이름으로 통일했습니다.
 
@@ -66,6 +80,15 @@
 - Gemini 대체 모델: 실제 생성 성공
 - Kakao REST API 키: 설정됨, 실제 Local 검색 HTTP 200
 - 실제 키 값은 이 문서와 Git 파일 어디에도 기록하지 않음
+
+# 공식 문서 확인
+
+확인일: 2026-09-02
+
+- Gemini Interactions API: https://ai.google.dev/gemini-api/docs/interactions-overview
+- Gemini 모델 목록: https://ai.google.dev/gemini-api/docs/models
+- Gemini Structured Output: https://ai.google.dev/gemini-api/docs/structured-output
+- Kakao Local API: https://developers.kakao.com/docs/latest/ko/local/dev-guide
 
 # 생성된 결과 파일
 

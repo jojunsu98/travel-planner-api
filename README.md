@@ -39,7 +39,7 @@
   → results/에 JSON + Markdown 저장 및 재검증
 ```
 
-Gemini는 우선 `gemini-flash-latest`를 사용합니다. 일시적인 5xx 또는 네트워크 오류가 발생할 때만 총 2회 제한 안에서 현재 호출 가능한 명시 모델 `gemini-3.5-flash`로 한 번 재시도합니다. 401/403 인증 오류는 재시도하지 않습니다.
+Gemini는 `gemini-3.8-flash`를 우선 사용합니다. 추천 응답은 JSON MIME 모드와 response schema를 사용하는 Structured Output으로 요청하고 Python에서 필드와 타입을 다시 검증합니다. 최종 리포트는 `text/plain`으로 요청합니다. 일시적인 5xx 또는 네트워크 오류가 발생하면 `gemini-3.5-flash`로 한 번 재시도합니다. 401/403 인증 오류는 재시도하지 않습니다.
 
 ## 5. 프로젝트 구조
 
@@ -103,7 +103,7 @@ python travel_planner.py -date "2026-10-10"
 
 ## 9. Gemini Structured Output
 
-1차 Gemini 응답은 다음 필드를 가진 JSON 객체로 제한하고, 파싱 후 Python 코드에서 다시 검증합니다.
+1차 Gemini 응답은 JSON MIME 모드와 schema로 구조를 제한하고, 파싱 후 Python 코드에서 필수 필드와 타입을 다시 검증합니다.
 
 ```json
 {
@@ -196,13 +196,21 @@ python travel_planner.py --date "2026-10-10"
 리포트를 UTF-8로 다시 읽어 확인했습니다. 이 재검증은 API 호출을 불필요하게
 반복하지 않기 위해 한 번만 수행했습니다.
 
-현재 Google 공식 문서는 새 프로젝트에 Interactions API를 권장하지만 기존
-`generateContent` API도 계속 완전 지원한다고 안내합니다. 따라서 실제로 정상
-동작하고 25개 회귀 테스트가 있는 현재 `client.models.generate_content` 구현은
-무리하게 교체하지 않았습니다. `gemini-flash-latest`와 대체 모델
-`gemini-3.5-flash`는 현재 공식 모델 목록에 있으며 Structured Output도
-지원됩니다. Kakao 호출은 공식 문서의 keyword endpoint와 `KakaoAK` 인증 방식을
-그대로 사용합니다.
+2026-09-28 새 노트북 환경에서 전체 단위 테스트 27개가 통과했습니다. 과거 실제
+End-to-End 성공 기록과 별개로, 이날 Gemini 재검증은 HTTP 503 서버 혼잡으로
+완주하지 못했습니다. 임시 JSON MIME 모드 실험에서는 추천과 Kakao 검색 5건까지
+성공한 실행이 있었지만 최종 Gemini 생성은 실패했고, 후속 실행도 추천 단계의
+503으로 중단됐습니다. 제출용 코드에서는 과제 요구사항에 맞춰 Structured Output
+schema를 유지했습니다. 이날 결과 파일은 생성되지 않았으며 기존 `2026-10-10`
+결과 파일은 그대로 보존했습니다.
+
+2026-09-02 문서 확인 당시 Google은 새 프로젝트에 Interactions API를 권장하면서도
+기존 `generateContent` API를 지원한다고 안내했습니다. 과거 실제 End-to-End
+성공과 회귀 테스트가 확인된 `client.models.generate_content` 구현을 유지합니다.
+현재 코드의 기본 모델은 `gemini-3.8-flash`이며, 추천에는 Structured Output schema를
+사용합니다. 2026-09-28 재검증은 HTTP 503으로 완주하지 못했으며 이후 API 호출은
+수행하지 않았습니다. Kakao 호출은 공식 keyword endpoint와 `KakaoAK` 인증 방식을
+사용합니다.
 
 ## 14. 보안
 

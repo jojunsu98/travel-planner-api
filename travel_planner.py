@@ -16,7 +16,7 @@ BASE_DIR = Path(__file__).resolve().parent
 ENV_PATH = BASE_DIR / ".env"
 RESULTS_DIR = BASE_DIR / "results"
 
-GEMINI_PRIMARY_MODEL = "gemini-flash-latest"
+GEMINI_PRIMARY_MODEL = "gemini-3.8-flash"
 GEMINI_FALLBACK_MODEL = "gemini-3.5-flash"
 GEMINI_MODELS = (GEMINI_PRIMARY_MODEL, GEMINI_FALLBACK_MODEL)
 KAKAO_KEYWORD_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
@@ -201,6 +201,10 @@ def request_recommendation(client, travel_date):
             last_error = error
             if attempt == 0 and (status in TRANSIENT_STATUS_CODES or status is None):
                 continue
+            if status is not None:
+                raise TravelPlannerError(
+                    f"Gemini 여행지 추천 요청에 실패했습니다 (HTTP {status})."
+                ) from error
             raise TravelPlannerError("Gemini 여행지 추천 요청에 실패했습니다.") from error
 
     raise TravelPlannerError("Gemini 여행지 추천 요청에 실패했습니다.") from last_error
@@ -314,6 +318,10 @@ def request_final_report(client, travel_date, recommendation, restaurants, error
             last_error = error
             if attempt == 0 and (status in TRANSIENT_STATUS_CODES or status is None):
                 continue
+            if status in TRANSIENT_STATUS_CODES:
+                raise TravelPlannerError(
+                    f"Gemini 최종 리포트 요청에 실패했습니다 (HTTP {status})."
+                ) from error
             raise TravelPlannerError("Gemini 최종 리포트 요청에 실패했습니다.") from error
 
     raise TravelPlannerError("Gemini 최종 리포트 요청에 실패했습니다.") from last_error

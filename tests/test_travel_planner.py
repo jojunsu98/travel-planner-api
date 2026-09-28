@@ -98,6 +98,10 @@ class RecommendationTests(unittest.TestCase):
             client.models.generate_content.call_args.kwargs["model"],
             travel_planner.GEMINI_PRIMARY_MODEL,
         )
+        self.assertEqual(travel_planner.GEMINI_PRIMARY_MODEL, "gemini-3.8-flash")
+        config = client.models.generate_content.call_args.kwargs["config"]
+        self.assertEqual(config.response_mime_type, "application/json")
+        self.assertIsNotNone(config.response_schema)
 
     def test_gemini_json_parse_error_retries_once(self):
         client = MagicMock()
@@ -120,6 +124,19 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(
             second_call.kwargs["model"], travel_planner.GEMINI_FALLBACK_MODEL
         )
+
+    def test_gemini_transient_failure_exposes_only_status_code(self):
+        client = MagicMock()
+        client.models.generate_content.side_effect = [
+            FakeApiError(503),
+            FakeApiError(503),
+        ]
+        with self.assertRaisesRegex(
+            travel_planner.TravelPlannerError, "HTTP 503"
+        ) as raised:
+            travel_planner.request_recommendation(client, "2026-10-10")
+        self.assertNotIn("API error", str(raised.exception))
+        self.assertEqual(client.models.generate_content.call_count, 2)
 
     def test_gemini_auth_error_is_not_retried(self):
         client = MagicMock()
@@ -210,6 +227,21 @@ class ReportAndPipelineTests(unittest.TestCase):
             client, "2026-10-10", VALID_RECOMMENDATION, [], []
         )
         self.assertEqual(result, VALID_REPORT)
+        self.assertEqual(client.models.generate_content.call_count, 2)
+
+    def test_final_report_transient_failure_exposes_only_status_code(self):
+        client = MagicMock()
+        client.models.generate_content.side_effect = [
+            FakeApiError(503),
+            FakeApiError(503),
+        ]
+        with self.assertRaisesRegex(
+            travel_planner.TravelPlannerError, "HTTP 503"
+        ) as raised:
+            travel_planner.request_final_report(
+                client, "2026-10-10", VALID_RECOMMENDATION, [], []
+            )
+        self.assertNotIn("API error", str(raised.exception))
         self.assertEqual(client.models.generate_content.call_count, 2)
 
     def test_final_report_prompt_marks_empty_restaurants(self):

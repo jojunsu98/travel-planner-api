@@ -10,7 +10,7 @@
 
 ```text
 날짜 CLI 입력 및 검증
-→ Gemini Structured Output 여행지 추천
+→ Gemini Structured Output 여행지 추천 및 Python 검증
 → recommended_city 추출
 → Kakao Local 맛집 최대 5곳 검색
 → 추천 JSON과 맛집을 Gemini가 종합
@@ -31,7 +31,7 @@
 - `results/travel_result_날짜.json`, `results/travel_report_날짜.md` 저장
 - 저장 직후 UTF-8 파일 재읽기 검증
 - 사용자에게 traceback을 노출하지 않는 오류 처리
-- 25개 네트워크 독립 자동 테스트
+- 27개 네트워크 독립 자동 테스트
 
 # 실제 검증 완료 항목
 
@@ -65,21 +65,33 @@
 # 실패/오류 해결 기록
 
 - 최초 진단용 표준입력 스크립트에서 `load_dotenv()` 자동 경로 탐색이 실패해 프로젝트 `.env` 경로를 명시했습니다. 실제 프로그램도 파일 위치 기준 경로를 사용합니다.
-- 현재 `gemini-flash-latest` 모델은 인증과 모델 조회는 성공하지만 생성 요청에서 일시적 503 또는 시간초과가 재현됐습니다.
-- 현재 실제 생성이 성공한 `gemini-3.5-flash`를 5xx/네트워크 오류 때 한 번만 사용하는 대체 모델로 추가했습니다. 기본 요청 모델은 과제 지침의 `gemini-flash-latest`를 유지합니다.
+- 2026-09-02 당시 `gemini-flash-latest` 모델은 인증과 모델 조회는 성공했지만 생성 요청에서 일시적 503 또는 시간초과가 재현됐습니다.
+- 2026-09-02 당시 실제 생성이 성공한 `gemini-3.5-flash`를 5xx/네트워크 오류 때 한 번만 쓰는 대체 모델로 추가했습니다. 현재 기본 모델은 `gemini-3.8-flash`입니다.
 - Google 공식 문서는 2026년 6월부터 새 프로젝트에 Interactions API를 권장하지만, 기존 `generateContent` API도 완전 지원한다고 명시합니다. 현재 구현은 실제 통합 실행과 25개 회귀 테스트를 통과하므로 `client.models.generate_content` 방식을 유지했습니다.
-- 공식 모델 문서에서 `gemini-flash-latest`의 현재 대상인 `gemini-3.5-flash`와 명시 대체 모델 `gemini-3.5-flash`의 지원 및 Structured Output 기능을 확인했습니다.
+- 2026-09-02 공식 모델 문서 확인에서 `gemini-flash-latest`의 대상과 `gemini-3.5-flash`의 Structured Output 지원을 확인했습니다.
 - Kakao 공식 문서에서 `GET https://dapi.kakao.com/v2/local/search/keyword.json`과 `Authorization: KakaoAK ${REST_API_KEY}` 방식을 다시 확인했습니다.
 - Kakao API의 과거 403 기록은 이번 PC 검증에서는 재현되지 않았고 현재 HTTP 200으로 정상입니다.
 - API 키 변수명은 최종적으로 `GEMINI_API_KEY`, `KAKAO_REST_API_KEY` 두 이름으로 통일했습니다.
 
 # 현재 API 상태
 
-- Gemini API 키: 설정됨, 인증 성공
-- Gemini 기본 모델: 사용 가능 목록 확인, 생성 요청은 현재 일시적 503/시간초과
-- Gemini 대체 모델: 실제 생성 성공
+- Gemini API 키: 설정됨; 2026-09-28 생성 재검증은 HTTP 503으로 실패
+- Gemini 기본 모델: `gemini-3.8-flash`, Structured Output schema 요청
+- Gemini 대체 모델: `gemini-3.5-flash`
 - Kakao REST API 키: 설정됨, 실제 Local 검색 HTTP 200
 - 실제 키 값은 이 문서와 Git 파일 어디에도 기록하지 않음
+
+## 2026-09-28 재검증
+
+- 새 노트북 환경에서 `python -m unittest -v`: 27개 모두 PASS
+- 과거 실제 End-to-End 성공 기록과 구분: 이날 Gemini 재검증은 HTTP 503 서버 혼잡으로 완주하지 못함
+- 임시 JSON MIME 모드 실험은 추천과 Kakao 5건 검색까지 성공한 실행이 있었으나, 최종 Gemini 생성은 실패
+- 후속 실행은 추천 단계에서 HTTP 503으로 실패
+- 제출용 코드에서는 과제 요구사항인 Structured Output schema를 유지
+- `results/`의 `2026-09-28` 파일은 생성되지 않음
+- 기존 `2026-10-10` JSON/Markdown 결과는 보존
+- API 재검증은 이 기록 이후 수행하지 않음
+- 오류 메시지는 HTTP 상태 코드만 표시하며 API 키와 원문 예외는 출력하지 않음
 
 # 공식 문서 확인
 

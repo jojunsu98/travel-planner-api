@@ -97,9 +97,12 @@ KAKAO_REST_API_KEY=YOUR_KEY_HERE
 ```powershell
 python travel_planner.py --date "2026-10-10"
 python travel_planner.py -date "2026-10-10"
+python travel_planner.py --date "2026-10-07" --city "서울" --origin "창원" --request "1박 2일, 예산 20만원. 여의도, 홍대, 이태원의 예쁜 카페와 맛집을 방문하고 싶어요."
 ```
 
 입력은 실제 존재하는 `YYYY-MM-DD` 날짜여야 합니다. 예를 들어 `2026-02-30`은 이해 가능한 오류 메시지와 함께 거부되며 traceback을 노출하지 않습니다.
+
+`--origin`, `--city`, `--request`는 선택 옵션입니다. `--request`를 지정하면 여행 조건을 Structured Output으로 분석해 선호 지역·활동별 Kakao 검색을 수행하고, 검색된 Kakao 장소만 이름과 지도 링크로 리포트에 표시합니다. 검색이 없는 카테고리는 결과 없음으로 기록하고 계속 진행합니다.
 
 ## 9. Gemini Structured Output
 

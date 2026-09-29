@@ -247,6 +247,115 @@ class RecommendationTests(unittest.TestCase):
 
 
 class NaturalLanguageRequestTests(unittest.TestCase):
+    def test_explicit_fallback_request_analysis_extracts_only_supplied_values(self):
+        request_text = (
+            "1박 2일, 예산 20만원, 여의도, 홍대, 이태원, 맛집, 카페, 펍"
+        )
+
+        analysis = travel_planner.build_fallback_request_analysis(
+            request_text, "서울"
+        )
+
+        self.assertEqual(analysis["duration"], "1박 2일")
+        self.assertEqual(analysis["budget"], "예산 20만원")
+        self.assertEqual(analysis["preferred_areas"], ["여의도", "홍대", "이태원"])
+        self.assertEqual(analysis["food_preferences"], ["맛집"])
+        self.assertEqual(analysis["cafe_preferences"], ["카페"])
+        self.assertEqual(analysis["nightlife_preferences"], ["펍"])
+        self.assertEqual(
+            [item["query"] for item in analysis["search_queries"]],
+            [
+                "여의도 맛집",
+                "여의도 카페",
+                "홍대 맛집",
+                "홍대 카페",
+                "이태원 맛집",
+                "이태원 카페",
+                "이태원 펍",
+            ],
+        )
+
+    def test_request_analysis_504_fallback_continues_to_save(self):
+        request_text = (
+            "1박 2일, 예산 20만원, 여의도, 홍대, 이태원, 맛집, 카페, 펍"
+        )
+        paths = (Path("result.json"), Path("report.md"))
+        with (
+            patch("travel_planner.load_api_keys", return_value=("gemini", "kakao")),
+            patch("travel_planner.create_gemini_client", return_value="client"),
+            patch("travel_planner.request_recommendation") as recommend,
+            patch(
+                "travel_planner.analyze_travel_request",
+                side_effect=travel_planner.TravelPlannerError(
+                    "Gemini 여행 요청 분석 실패 (HTTP 504)"
+                ),
+            ) as analyze,
+            patch("travel_planner.search_requested_places", return_value=[]) as search,
+            patch(
+                "travel_planner.request_structured_trip_report",
+                return_value=VALID_REQUEST_REPORT,
+            ) as final_report,
+            patch(
+                "travel_planner.render_request_trip_report",
+                return_value="# 서울 fallback",
+            ),
+            patch("travel_planner.save_results", return_value=paths) as save,
+            patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            result = travel_planner.run_pipeline(
+                "2026-10-07",
+                "unused",
+                city="서울",
+                user_request=request_text,
+            )
+
+        recommend.assert_not_called()
+        analyze.assert_called_once()
+        self.assertEqual(
+            [item["query"] for item in search.call_args.args[0]],
+            [
+                "여의도 맛집",
+                "여의도 카페",
+                "홍대 맛집",
+                "홍대 카페",
+                "이태원 맛집",
+                "이태원 카페",
+                "이태원 펍",
+            ],
+        )
+        final_report.assert_called_once()
+        self.assertEqual(save.call_args.kwargs["request_analysis"]["budget"], "예산 20만원")
+        self.assertIn("HTTP 504", result["errors"][-1])
+        self.assertEqual(result["json_path"], paths[0])
+        self.assertEqual(result["markdown_path"], paths[1])
+
+    def test_request_analysis_authentication_error_does_not_fallback(self):
+        with (
+            patch("travel_planner.load_api_keys", return_value=("gemini", "kakao")),
+            patch("travel_planner.create_gemini_client", return_value="client"),
+            patch("travel_planner.request_recommendation") as recommend,
+            patch(
+                "travel_planner.analyze_travel_request",
+                side_effect=travel_planner.TravelPlannerError(
+                    "Gemini API 인증에 실패했습니다."
+                ),
+            ),
+            patch("travel_planner.search_requested_places") as search,
+            patch("travel_planner.save_results") as save,
+            patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            with self.assertRaisesRegex(travel_planner.TravelPlannerError, "인증"):
+                travel_planner.run_pipeline(
+                    "2026-10-07",
+                    "unused",
+                    city="서울",
+                    user_request="1박 2일, 예산 20만원, 여의도 맛집",
+                )
+
+        recommend.assert_not_called()
+        search.assert_not_called()
+        save.assert_not_called()
+
     def test_analyze_request_adds_searches_for_each_preferred_area(self):
         client = MagicMock()
         client.models.generate_content.return_value = response_with_text(

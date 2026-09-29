@@ -131,7 +131,8 @@ def create_gemini_client(api_key):
 
 def _error_status(error):
     """SDK 예외에서 HTTP 상태 코드만 안전하게 추출한다."""
-    return getattr(error, "status_code", None) or getattr(error, "code", None)
+    status = getattr(error, "status_code", None) or getattr(error, "code", None)
+    return int(status) if isinstance(status, str) and status.isdigit() else status
 
 
 def _parse_json_object(response_text):
@@ -305,6 +306,67 @@ def _validate_travel_request_analysis(analysis):
         **normalized,
         "search_queries": normalized_queries,
     }
+
+
+def fallback_travel_request(travel_request, city):
+    """명시된 조건만 추출하는 제한적 규칙 기반 분석. 장소 상호는 생성하지 않는다."""
+    duration = re.search(r"\d+\s*박\s*\d+\s*일|\d+\s*일|당일", travel_request)
+    budget = re.search(
+        r"(?:현지\s*예산|예산)?\s*\d[\d,]*(?:\.\d+)?\s*(?:만\s*원|원)",
+        travel_request,
+    )
+    # 알려진 지역명과 명시적인 행정동/역명만 인식한다. 모르는 지역은 도시로 검색한다.
+    area_pattern = (
+        r"여의도|홍대|이태원|성수|연남|명동|강남|잠실|종로|해운대|서면|광안리|"
+        r"[가-힣]{2,8}(?:동|역)(?=\s|[·,→]|에서|의|을|를|에|$)"
+    )
+    areas = list(dict.fromkeys(re.findall(area_pattern, travel_request)))
+    areas = [area for area in areas if area not in {city, "활동", "지역"}]
+    specs = (
+        ("restaurant", r"맛집|식사|음식|점심|저녁", "맛집", "food_preferences"),
+        ("cafe", r"예쁜\s*카페|카페|커피", "카페", "cafe_preferences"),
+        ("nightlife", r"펍|술집|맥주|바(?=\s|[·,]|$)", "펍", "nightlife_preferences"),
+        ("activity", r"산책|전시|박물관|공원|관광", "관광", None),
+    )
+    found = []
+    preferences = {key: [] for key in (
+        "food_preferences", "cafe_preferences", "nightlife_preferences"
+    )}
+    for category, pattern, keyword, field in specs:
+        match = re.search(pattern, travel_request)
+        if match:
+            if field:
+                preferences[field] = [match.group()]
+            # '이태원 펍'처럼 활동 바로 앞에 지정한 지역은 해당 지역에만 연결한다.
+            explicit = [area for area in areas if re.search(
+                re.escape(area) + r"(?:에서|의|에)?\s*(?:예쁜\s*)?(?:" + pattern + r")",
+                travel_request,
+            )]
+            found.append((match.start(), category, keyword, explicit))
+    found.sort()
+    if not found:
+        found = [(0, "activity", "관광", [])]
+    queries, activities = [], []
+    for area in areas or [city]:
+        for _, category, keyword, explicit in found:
+            if explicit and area not in explicit:
+                continue
+            if len(queries) >= MAX_REQUEST_SEARCH_QUERIES:
+                break
+            queries.append({
+                "query": f"{city} {area} {keyword}" if area != city else f"{city} {keyword}",
+                "area": area,
+                "category": category,
+            })
+            activities.append(f"{area} {keyword} 방문")
+    return _validate_travel_request_analysis({
+        "duration": duration.group() if duration else "미지정",
+        "budget": budget.group().strip() if budget else "미지정",
+        "preferred_areas": areas,
+        "activities": activities,
+        **preferences,
+        "search_queries": queries,
+    })
 
 
 def analyze_travel_request(client, travel_request, city=None, destination=None):
@@ -1069,6 +1131,8 @@ def _transient_error_details(error):
     current = error
     while current is not None:
         status = _error_status(current)
+        if status in {401, 403}:
+            return None, False
         if isinstance(status, int) or (
             isinstance(status, str) and status.isdigit()
         ):
@@ -1284,6 +1348,105 @@ def save_results(
 
     return json_path, markdown_path
 
+def build_fallback_request_analysis(travel_request, city):
+    """Gemini 요청 분석 실패 시 명시된 조건만 단순 규칙으로 추출한다."""
+    text = travel_request.strip()
+
+    duration_match = re.search(r"(\d+)\s*박\s*(\d+)\s*일", text)
+    duration = (
+        f"{duration_match.group(1)}박 {duration_match.group(2)}일"
+        if duration_match
+        else "미지정"
+    )
+
+    budget_match = re.search(r"(?:예산(?:은)?\s*)?(?:약\s*)?\d+\s*만원", text)
+    budget = re.sub(r"\s+", " ", budget_match.group()).strip() if budget_match else "미지정"
+
+    known_areas = (
+        "여의도",
+        "홍대",
+        "이태원",
+        "성수",
+        "강남",
+        "명동",
+        "잠실",
+        "종로",
+    )
+    preferred_areas = [area for area in known_areas if area in text]
+
+    if not preferred_areas and city:
+        preferred_areas = [city]
+
+    food_preferences = ["맛집"] if "맛집" in text else []
+
+    if "예쁜 카페" in text:
+        cafe_preferences = ["예쁜 카페"]
+    elif "카페" in text:
+        cafe_preferences = ["카페"]
+    else:
+        cafe_preferences = []
+
+    nightlife_preferences = ["펍"] if "펍" in text else []
+
+    activities = []
+
+    if food_preferences:
+        activities.append("맛집 방문")
+
+    if cafe_preferences:
+        activities.append(f"{cafe_preferences[0]} 방문")
+
+    if nightlife_preferences:
+        if "이태원" in preferred_areas:
+            activities.append("이태원 펍 방문")
+        else:
+            activities.append("펍 방문")
+
+    search_queries = []
+
+    for area in preferred_areas:
+        if food_preferences:
+            search_queries.append(
+                {
+                    "query": f"{area} 맛집",
+                    "area": area,
+                    "category": "restaurant",
+                }
+            )
+
+        if cafe_preferences:
+            search_queries.append(
+                {
+                    "query": f"{area} {cafe_preferences[0]}",
+                    "area": area,
+                    "category": "cafe",
+                }
+            )
+
+        if nightlife_preferences and (
+            "이태원" not in preferred_areas or area == "이태원"
+        ):
+            search_queries.append(
+                {
+                    "query": f"{area} 펍",
+                    "area": area,
+                    "category": "nightlife",
+                }
+            )
+
+        if len(search_queries) >= MAX_REQUEST_SEARCH_QUERIES:
+            break
+
+    return {
+        "duration": duration,
+        "budget": budget,
+        "preferred_areas": preferred_areas,
+        "activities": activities,
+        "food_preferences": food_preferences,
+        "cafe_preferences": cafe_preferences,
+        "nightlife_preferences": nightlife_preferences,
+        "search_queries": search_queries[:MAX_REQUEST_SEARCH_QUERIES],
+    }
 
 def run_pipeline(
     travel_date, output_dir=RESULTS_DIR, origin=None, city=None, user_request=None
@@ -1338,12 +1501,21 @@ def run_pipeline(
             )
     else:
         print("[3/5] Gemini 여행 요청 조건 분석 중...")
-        request_analysis = analyze_travel_request(
-            client,
-            user_request,
-            city=city,
-            destination=city,
-        )
+        try:
+            request_analysis = analyze_travel_request(
+                client,
+                user_request,
+                city=city,
+                destination=city,
+            )
+        except TravelPlannerError as error:
+            status, is_transient = _transient_error_details(error)
+            if not is_transient:
+                raise
+            detail = f"HTTP {status}" if status is not None else "일시적 네트워크 오류"
+            errors.append(f"Gemini 여행 요청 분석 실패 ({detail}); Python fallback 사용")
+            print("      요청 분석 Python fallback으로 계속 진행합니다.")
+            request_analysis = build_fallback_request_analysis(user_request, city)
         print(
             f"      Kakao 검색어 {len(request_analysis['search_queries'])}개 생성"
         )
@@ -1384,6 +1556,16 @@ def run_pipeline(
                 report_data,
                 origin=origin,
             )
+
+        # 원문과 분석 출처를 Markdown에 남기되 기존 JSON 필드 구조는 유지한다.
+        request_quote = "\n".join(
+            "> " + line for line in user_request.splitlines()
+        )
+        report += "\n## 사용자 원문 요청\n\n" + request_quote + "\n"
+        if errors:
+            report += "\n## 처리 기록\n\n" + "\n".join(f"- {error}" for error in errors) + "\n"
+        if any("요청 분석 실패" in error for error in errors):
+            report += "\n- 요청 분석은 Python 규칙 기반 대체 처리입니다. 복잡한 조건·부정 표현은 해석하지 못할 수 있으므로 원문과 비교하세요.\n"
 
     print("[5/5] JSON과 Markdown 결과 저장 및 검증 중...")
     json_path, markdown_path = save_results(
